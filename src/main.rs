@@ -117,27 +117,42 @@ fn collect_desktop_files(dir: PathBuf, desktop_files: &mut Vec<PathBuf>) {
 
 fn parse_desktop_file(file_path: &PathBuf) -> Option<(String, String)> {
     let content = fs::read_to_string(file_path).ok()?;
-    let mut name = None;
-    let mut icon = None;
+    let mut name: Option<String> = None;
+    let mut icon: Option<String> = None;
     let mut no_display = false;
+    let mut hidden = false;
+    let mut app_type: Option<String> = None;
 
     for line in content.lines() {
-        if line.starts_with("Name=") {
+        if line.starts_with("Name=") && name.is_none() {
             name = Some(line.trim_start_matches("Name=").to_string());
         }
-        if line.starts_with("Icon=") {
+        if line.starts_with("Icon=") && icon.is_none() {
             icon = Some(line.trim_start_matches("Icon=").to_string());
         }
-        if line.starts_with("NoDisplay=true") {
-            no_display = true;
+        if line.starts_with("NoDisplay=") {
+            if line.trim_start_matches("NoDisplay=").to_lowercase() == "true" {
+                no_display = true;
+            }
         }
-        if line.starts_with("Type=") && line.trim_start_matches("Type=") != "Application" {
-            return None;
+        if line.starts_with("Hidden=") {
+            if line.trim_start_matches("Hidden=").to_lowercase() == "true" {
+                hidden = true;
+            }
+        }
+        if line.starts_with("Type=") && app_type.is_none() {
+            app_type = Some(line.trim_start_matches("Type=").to_string());
         }
     }
-    if no_display {
+
+    if no_display || hidden {
         return None;
     }
+
+    if app_type.as_deref() != Some("Application") {
+        return None;
+    }
+    
     name.zip(icon)
 }
 
