@@ -30,6 +30,7 @@ fn build_ui(app: &Application) {
     let header_bar = HeaderBar::new();
 
     let main_box = GtkBox::new(Orientation::Vertical, 0);
+    main_box.prepend(&header_bar);
 
     let entry = Entry::builder()
         .placeholder_text("Search applications...")
@@ -128,12 +129,14 @@ fn parse_desktop_file(file_path: &PathBuf) -> Option<String> {
 }
 
 fn filter_entries(list_box: &ListBox, query: &str) {
-    let mut child = list_box.first_child();
-    while let Some(row) = child {
-        if let Some(label) = row.downcast_ref::<gtk::Label>() {
-            let app_name = label.text().to_lowercase();
-            row.set_visible(app_name.contains(query));
+    let mut current_row_widget = list_box.first_child();
+    while let Some(row_widget) = current_row_widget {
+        if let Some(list_box_row) = row_widget.downcast_ref::<gtk::ListBoxRow>() {
+            if let Some(label) = list_box_row.child().as_ref().and_then(|child_widget_ref| child_widget_ref.downcast_ref::<gtk::Label>()) {
+                let app_name = label.text().to_lowercase();
+                list_box_row.set_visible(app_name.contains(query));
+            }
         }
-        child = row.next_sibling();
+        current_row_widget = row_widget.next_sibling();
     }
 }
