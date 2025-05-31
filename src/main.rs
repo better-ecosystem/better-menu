@@ -3,7 +3,7 @@ use adw::{Application, ApplicationWindow, HeaderBar};
 use gio::ApplicationFlags;
 use glib::ExitCode;
 use gtk::{
-    Box as GtkBox, Entry, Orientation, ListBox, ScrolledWindow, PolicyType, SelectionMode, Label, Align
+    Box as GtkBox, Entry, Orientation, ListBox, ScrolledWindow, PolicyType, SelectionMode, Label, Align, Image
 };
 use std::fs;
 use std::path::PathBuf;
@@ -81,14 +81,23 @@ fn load_desktop_entries(list_box: &ListBox) {
     desktop_files.dedup();
 
     for file_path in desktop_files {
-        if let Some(app_name) = parse_desktop_file(&file_path) {
+        if let Some((app_name, icon_name)) = parse_desktop_file(&file_path) {
+            let item_box = GtkBox::new(Orientation::Horizontal, 5);
+
+            let icon = Image::from_icon_name(&icon_name);
+            icon.set_icon_size(gtk::IconSize::Large);
+            icon.set_margin_start(5);
+            item_box.append(&icon);
+
             let label = Label::new(Some(&app_name));
             label.set_halign(Align::Start);
             label.set_margin_start(10);
             label.set_margin_end(10);
             label.set_margin_top(5);
             label.set_margin_bottom(5);
-            list_box.append(&label);
+            item_box.append(&label);
+            
+            list_box.append(&item_box);
         }
     }
 }
@@ -106,35 +115,41 @@ fn collect_desktop_files(dir: PathBuf, desktop_files: &mut Vec<PathBuf>) {
     }
 }
 
-fn parse_desktop_file(file_path: &PathBuf) -> Option<String> {
+fn parse_desktop_file(file_path: &PathBuf) -> Option<(String, String)> {
     let content = fs::read_to_string(file_path).ok()?;
     let mut name = None;
+    let mut icon = None;
     let mut no_display = false;
 
     for line in content.lines() {
         if line.starts_with("Name=") {
             name = Some(line.trim_start_matches("Name=").to_string());
         }
+        if line.starts_with("Icon=") {
+            icon = Some(line.trim_start_matches("Icon=").to_string());
+        }
         if line.starts_with("NoDisplay=true") {
             no_display = true;
         }
         if line.starts_with("Type=") && line.trim_start_matches("Type=") != "Application" {
-            return None; 
+            return None;
         }
     }
     if no_display {
         return None;
     }
-    name
+    name.zip(icon)
 }
 
 fn filter_entries(list_box: &ListBox, query: &str) {
     let mut current_row_widget = list_box.first_child();
     while let Some(row_widget) = current_row_widget {
         if let Some(list_box_row) = row_widget.downcast_ref::<gtk::ListBoxRow>() {
-            if let Some(label) = list_box_row.child().as_ref().and_then(|child_widget_ref| child_widget_ref.downcast_ref::<gtk::Label>()) {
-                let app_name = label.text().to_lowercase();
-                list_box_row.set_visible(app_name.contains(query));
+            if let Some(item_box) = list_box_row.child().as_ref().and_then(|child_widget_ref| child_widget_ref.downcast_ref::<GtkBox>()) {
+                if let Some(label) = item_box.last_child().as_ref().and_then(|child_widget_ref| child_widget_ref.downcast_ref::<Label>()) {
+                    let app_name = label.text().to_lowercase();
+                    list_box_row.set_visible(app_name.contains(query));
+                }
             }
         }
         current_row_widget = row_widget.next_sibling();
