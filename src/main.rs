@@ -57,13 +57,25 @@ fn evaluate_math_expression(expression: &str) -> Option<String> {
     }
 }
 
+fn create_icon_image(icon_name: &str) -> Option<Image> {
+    if let Some(display) = gtk::gdk::Display::default() {
+        let icon_theme = gtk::IconTheme::for_display(&display);
+        if icon_theme.has_icon(icon_name) {
+            let icon = Image::from_icon_name(icon_name);
+            icon.set_icon_size(gtk::IconSize::Large);
+            icon.set_margin_start(5);
+            return Some(icon);
+        }
+    }
+    None
+}
+
 fn create_math_result_item(expression: &str, result: &str) -> GtkBox {
     let item_box = GtkBox::new(Orientation::Horizontal, 5);
 
-    let icon = Image::from_icon_name("accessories-calculator");
-    icon.set_icon_size(gtk::IconSize::Large);
-    icon.set_margin_start(5);
-    item_box.append(&icon);
+    if let Some(icon) = create_icon_image("accessories-calculator") {
+        item_box.append(&icon);
+    }
 
     let label = Label::new(Some(&format!("{} = {}", expression, result)));
     label.set_halign(Align::Start);
@@ -328,10 +340,9 @@ fn load_desktop_entries(list_box: &ListBox, exec_commands: &Rc<RefCell<HashMap<S
         if let Some((app_name, icon_name, exec_command)) = parse_desktop_file(&file_path) {
             let item_box = GtkBox::new(Orientation::Horizontal, 5);
 
-            let icon = Image::from_icon_name(&icon_name);
-            icon.set_icon_size(gtk::IconSize::Large);
-            icon.set_margin_start(5);
-            item_box.append(&icon);
+            if let Some(icon) = create_icon_image(&icon_name) {
+                item_box.append(&icon);
+            }
 
             let label = Label::new(Some(&app_name));
             label.set_halign(Align::Start);
