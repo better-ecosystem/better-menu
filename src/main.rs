@@ -15,6 +15,28 @@ use std::process::Command;
 use std::rc::Rc;
 use xdg::BaseDirectories;
 
+fn scroll_to_selected(list_box: &ListBox, scrolled_window: &ScrolledWindow) {
+    if let Some(selected_row) = list_box.selected_row() {
+        let adjustment = scrolled_window.vadjustment();
+        
+        if let (Some(row_bounds), Some(scrolled_bounds)) = (
+            selected_row.compute_bounds(list_box),
+            scrolled_window.compute_bounds(scrolled_window)
+        ) {
+            let row_top = row_bounds.y() as f64;
+            let row_bottom = (row_bounds.y() + row_bounds.height()) as f64;
+            let visible_top = adjustment.value();
+            let visible_bottom = visible_top + scrolled_bounds.height() as f64;
+            
+            if row_top < visible_top {
+                adjustment.set_value(row_top);
+            } else if row_bottom > visible_bottom {
+                adjustment.set_value(row_bottom - scrolled_bounds.height() as f64);
+            }
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let app = Application::builder()
         .application_id("com.better-ecosystem.menu")
@@ -73,14 +95,21 @@ fn build_ui(app: &Application) {
 
     window.set_content(Some(&main_box));
 
-    let key_controller = EventControllerKey::new();
-    key_controller.connect_key_pressed(glib::clone!(@weak window, @weak list_box, @strong exec_commands => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
-        if key == gtk::gdk::Key::Escape {
-            window.close();
-            glib::Propagation::Stop
-        } else if key == gtk::gdk::Key::Return {
-            if let Some(selected_row) = list_box.selected_row() {
-                if let Some(item_box) = selected_row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
+    entry.connect_activate(glib::clone!(@weak window, @weak list_box, @strong exec_commands => move |_| {
+        if let Some(selected_row) = list_box.selected_row() {
+            if let Some(item_box) = selected_row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
+                if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
+                    let app_name = label.text().to_string();
+                    if let Some(exec_command) = exec_commands.borrow().get(&app_name) {
+                        launch_application(exec_command);
+                        window.close();
+                    }
+                }
+            }
+        } else {
+            if let Some(first_row) = list_box.row_at_index(0) {
+                list_box.select_row(Some(&first_row));
+                if let Some(item_box) = first_row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                     if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
                         let app_name = label.text().to_string();
                         if let Some(exec_command) = exec_commands.borrow().get(&app_name) {
@@ -90,8 +119,41 @@ fn build_ui(app: &Application) {
                     }
                 }
             }
+        }
+    }));
+
+    let key_controller = EventControllerKey::new();
+    key_controller.connect_key_pressed(glib::clone!(@weak window, @weak list_box, @weak entry, @weak scrolled_window, @strong exec_commands => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
+        if key == gtk::gdk::Key::Escape {
+            window.close();
+            glib::Propagation::Stop
+        } else if key == gtk::gdk::Key::Down {
+            if let Some(selected_row) = list_box.selected_row() {
+                let index = selected_row.index();
+                if let Some(next_row) = list_box.row_at_index(index + 1) {
+                    list_box.select_row(Some(&next_row));
+                    scroll_to_selected(&list_box, &scrolled_window);
+                }
+            } else {
+                if let Some(first_row) = list_box.row_at_index(0) {
+                    list_box.select_row(Some(&first_row));
+                    scroll_to_selected(&list_box, &scrolled_window);
+                }
+            }
+            glib::Propagation::Stop
+        } else if key == gtk::gdk::Key::Up {
+            if let Some(selected_row) = list_box.selected_row() {
+                let index = selected_row.index();
+                if index > 0 {
+                    if let Some(prev_row) = list_box.row_at_index(index - 1) {
+                        list_box.select_row(Some(&prev_row));
+                        scroll_to_selected(&list_box, &scrolled_window);
+                    }
+                }
+            }
             glib::Propagation::Stop
         } else {
+            entry.grab_focus();
             glib::Propagation::Proceed
         }
     }));
@@ -100,10 +162,15 @@ fn build_ui(app: &Application) {
     load_desktop_entries(&list_box, &exec_commands, &window);
 
     let list_box_clone = list_box.clone();
+    let scrolled_window_clone = scrolled_window.clone();
     entry.connect_changed(move |entry| {
         let query = entry.text().to_lowercase();
         if query.is_empty() {
             list_box_clone.unset_filter_func();
+            if let Some(first_row) = list_box_clone.row_at_index(0) {
+                list_box_clone.select_row(Some(&first_row));
+                scroll_to_selected(&list_box_clone, &scrolled_window_clone);
+            }
         } else {
             let query_clone = query.clone();
             list_box_clone.set_filter_func(move |row| {
@@ -115,6 +182,13 @@ fn build_ui(app: &Application) {
                 }
                 false
             });
+            
+            glib::idle_add_local_once(glib::clone!(@weak list_box_clone, @weak scrolled_window_clone => move || {
+                if let Some(first_visible_row) = list_box_clone.row_at_index(0) {
+                    list_box_clone.select_row(Some(&first_visible_row));
+                    scroll_to_selected(&list_box_clone, &scrolled_window_clone);
+                }
+            }));
         }
     });
 
@@ -172,6 +246,10 @@ fn load_desktop_entries(list_box: &ListBox, exec_commands: &Rc<RefCell<HashMap<S
             }
         }
     }));
+
+    if let Some(first_row) = list_box.row_at_index(0) {
+        list_box.select_row(Some(&first_row));
+    }
 }
 
 fn collect_desktop_files(dir: PathBuf, desktop_files: &mut Vec<PathBuf>) {
