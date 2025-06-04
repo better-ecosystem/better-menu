@@ -11,3 +11,4 @@ adw = { version = "0.6.0", package = "libadwaita", features = ["v1_4"] }
 gio = { version = "0.19.5", package = "gio", features = ["v2_76"] }
 glib = { version = "0.19.5", package = "glib", features = ["v2_76"] }
 xdg = "2.5.2"
+evalexpr = "11.3.0"

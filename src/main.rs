@@ -1,5 +1,6 @@
 use adw::prelude::*;
 use adw::{Application, ApplicationWindow};
+use evalexpr::eval;
 use gio::ApplicationFlags;
 use glib::ExitCode;
 use gtk::{
@@ -37,6 +38,39 @@ fn scroll_to_selected(list_box: &ListBox, scrolled_window: &ScrolledWindow) {
     }
 }
 
+fn evaluate_math_expression(expression: &str) -> Option<String> {
+    match eval(expression) {
+        Ok(result) => Some(result.to_string()),
+        Err(_) => None,
+    }
+}
+
+fn create_math_result_item(expression: &str, result: &str) -> GtkBox {
+    let item_box = GtkBox::new(Orientation::Horizontal, 5);
+
+    let icon = Image::from_icon_name("accessories-calculator");
+    icon.set_icon_size(gtk::IconSize::Large);
+    icon.set_margin_start(5);
+    item_box.append(&icon);
+
+    let label = Label::new(Some(&format!("{} = {}", expression, result)));
+    label.set_halign(Align::Start);
+    label.set_margin_start(10);
+    label.set_margin_end(10);
+    label.set_margin_top(5);
+    label.set_margin_bottom(5);
+    item_box.append(&label);
+
+    item_box
+}
+
+fn copy_to_clipboard(text: &str) {
+    if let Some(display) = gtk::gdk::Display::default() {
+        let clipboard = display.clipboard();
+        clipboard.set_text(text);
+    }
+}
+
 fn main() -> ExitCode {
     let app = Application::builder()
         .application_id("com.better-ecosystem.menu")
@@ -49,6 +83,7 @@ fn main() -> ExitCode {
 
 fn build_ui(app: &Application) {
     let exec_commands: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
+    let math_results: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Better Menu")
@@ -92,26 +127,44 @@ fn build_ui(app: &Application) {
 
     window.set_content(Some(&main_box));
 
-    entry.connect_activate(glib::clone!(@weak window, @weak list_box, @strong exec_commands => move |_| {
+    entry.connect_activate(glib::clone!(@weak window, @weak list_box, @strong exec_commands, @strong math_results => move |entry| {
         if let Some(selected_row) = list_box.selected_row() {
             if let Some(item_box) = selected_row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                 if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
-                    let app_name = label.text().to_string();
-                    if let Some(exec_command) = exec_commands.borrow().get(&app_name) {
-                        launch_application(exec_command);
+                    let label_text = label.text().to_string();
+                    
+                    if label_text.contains(" = ") {
+                        let result = label_text.split(" = ").last().unwrap_or("").to_string();
+                        copy_to_clipboard(&result);
                         window.close();
+                    } else {
+                        if let Some(exec_command) = exec_commands.borrow().get(&label_text) {
+                            launch_application(exec_command);
+                            window.close();
+                        }
                     }
                 }
             }
         } else {
-            if let Some(first_row) = list_box.row_at_index(0) {
+            let query = entry.text().to_string();
+            if let Some(result) = evaluate_math_expression(&query) {
+                copy_to_clipboard(&result);
+                window.close();
+            } else if let Some(first_row) = list_box.row_at_index(0) {
                 list_box.select_row(Some(&first_row));
                 if let Some(item_box) = first_row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                     if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
-                        let app_name = label.text().to_string();
-                        if let Some(exec_command) = exec_commands.borrow().get(&app_name) {
-                            launch_application(exec_command);
+                        let label_text = label.text().to_string();
+                        
+                        if label_text.contains(" = ") {
+                            let result = label_text.split(" = ").last().unwrap_or("").to_string();
+                            copy_to_clipboard(&result);
                             window.close();
+                        } else {
+                            if let Some(exec_command) = exec_commands.borrow().get(&label_text) {
+                                launch_application(exec_command);
+                                window.close();
+                            }
                         }
                     }
                 }
@@ -120,7 +173,7 @@ fn build_ui(app: &Application) {
     }));
 
     let key_controller = EventControllerKey::new();
-    key_controller.connect_key_pressed(glib::clone!(@weak window, @weak list_box, @weak entry, @weak scrolled_window, @strong exec_commands => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
+    key_controller.connect_key_pressed(glib::clone!(@weak window, @weak list_box, @weak entry, @weak scrolled_window, @strong exec_commands, @strong math_results => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
         if key == gtk::gdk::Key::Escape {
             window.close();
             glib::Propagation::Stop
@@ -162,8 +215,23 @@ fn build_ui(app: &Application) {
 
     let list_box_clone = list_box.clone();
     let scrolled_window_clone = scrolled_window.clone();
+    let math_results_clone = math_results.clone();
     entry.connect_changed(move |entry| {
         let query = entry.text().to_lowercase();
+        
+        while let Some(row) = list_box_clone.row_at_index(0) {
+            if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
+                if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
+                    let label_text = label.text().to_string();
+                    if label_text.contains(" = ") {
+                        list_box_clone.remove(&row);
+                        continue;
+                    }
+                }
+            }
+            break;
+        }
+        
         if query.is_empty() {
             list_box_clone.unset_filter_func();
             if let Some(first_row) = list_box_clone.row_at_index(0) {
@@ -171,12 +239,23 @@ fn build_ui(app: &Application) {
                 scroll_to_selected(&list_box_clone, &scrolled_window_clone);
             }
         } else {
+            if let Some(result) = evaluate_math_expression(&query) {
+                let math_item = create_math_result_item(&query, &result);
+                list_box_clone.prepend(&math_item);
+                math_results_clone.borrow_mut().clear();
+                math_results_clone.borrow_mut().push(result);
+            }
+            
             let query_clone = query.clone();
             let query_for_idle = query.clone();
             list_box_clone.set_filter_func(move |row| {
                 if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                     if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
-                        let app_name = label.text().to_lowercase();
+                        let label_text = label.text().to_string();
+                        if label_text.contains(" = ") {
+                            return true;
+                        }
+                        let app_name = label_text.to_lowercase();
                         return app_name.contains(&query_clone);
                     }
                 }
@@ -189,8 +268,8 @@ fn build_ui(app: &Application) {
                     if let Some(row) = list_box_clone.row_at_index(index) {
                         if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                             if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
-                                let app_name = label.text().to_lowercase();
-                                if app_name.contains(&query_for_idle) {
+                                let label_text = label.text().to_string();
+                                if label_text.contains(" = ") || label_text.to_lowercase().contains(&query_for_idle) {
                                     list_box_clone.select_row(Some(&row));
                                     scroll_to_selected(&list_box_clone, &scrolled_window_clone);
                                     break;
@@ -252,10 +331,17 @@ fn load_desktop_entries(list_box: &ListBox, exec_commands: &Rc<RefCell<HashMap<S
     list_box.connect_row_activated(glib::clone!(@weak window, @strong exec_commands => move |_, row| {
         if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
             if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
-                let app_name = label.text().to_string();
-                if let Some(exec_command) = exec_commands.borrow().get(&app_name) {
-                    launch_application(exec_command);
+                let label_text = label.text().to_string();
+                
+                if label_text.contains(" = ") {
+                    let result = label_text.split(" = ").last().unwrap_or("").to_string();
+                    copy_to_clipboard(&result);
                     window.close();
+                } else {
+                    if let Some(exec_command) = exec_commands.borrow().get(&label_text) {
+                        launch_application(exec_command);
+                        window.close();
+                    }
                 }
             }
         }
