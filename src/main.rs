@@ -172,45 +172,6 @@ fn build_ui(app: &Application) {
         }
     }));
 
-    let key_controller = EventControllerKey::new();
-    key_controller.connect_key_pressed(glib::clone!(@weak window, @weak list_box, @weak entry, @weak scrolled_window, @strong exec_commands, @strong math_results => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
-        if key == gtk::gdk::Key::Escape {
-            window.close();
-            glib::Propagation::Stop
-        } else if key == gtk::gdk::Key::Tab {
-            glib::Propagation::Stop
-        } else if key == gtk::gdk::Key::Down {
-            if let Some(selected_row) = list_box.selected_row() {
-                let index = selected_row.index();
-                if let Some(next_row) = list_box.row_at_index(index + 1) {
-                    list_box.select_row(Some(&next_row));
-                    scroll_to_selected(&list_box, &scrolled_window);
-                }
-            } else {
-                if let Some(first_row) = list_box.row_at_index(0) {
-                    list_box.select_row(Some(&first_row));
-                    scroll_to_selected(&list_box, &scrolled_window);
-                }
-            }
-            glib::Propagation::Stop
-        } else if key == gtk::gdk::Key::Up {
-            if let Some(selected_row) = list_box.selected_row() {
-                let index = selected_row.index();
-                if index > 0 {
-                    if let Some(prev_row) = list_box.row_at_index(index - 1) {
-                        list_box.select_row(Some(&prev_row));
-                        scroll_to_selected(&list_box, &scrolled_window);
-                    }
-                }
-            }
-            glib::Propagation::Stop
-        } else {
-            entry.grab_focus();
-            glib::Propagation::Proceed
-        }
-    }));
-    window.add_controller(key_controller);
-
     load_desktop_entries(&list_box, &exec_commands, &window);
 
     let list_box_clone = list_box.clone();
@@ -284,6 +245,52 @@ fn build_ui(app: &Application) {
             }));
         }
     });
+
+    let escape_controller = EventControllerKey::new();
+    escape_controller.connect_key_pressed(glib::clone!(@weak window => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
+        if key == gtk::gdk::Key::Escape {
+            window.close();
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    }));
+    window.add_controller(escape_controller);
+
+    let entry_nav_controller = EventControllerKey::new();
+    entry_nav_controller.connect_key_pressed(glib::clone!(@weak list_box, @weak scrolled_window => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
+        match key {
+            gtk::gdk::Key::Down => {
+                if let Some(selected_row) = list_box.selected_row() {
+                    let index = selected_row.index();
+                    if let Some(next_row) = list_box.row_at_index(index + 1) {
+                        list_box.select_row(Some(&next_row));
+                        scroll_to_selected(&list_box, &scrolled_window);
+                    }
+                } else {
+                    if let Some(first_row) = list_box.row_at_index(0) {
+                        list_box.select_row(Some(&first_row));
+                        scroll_to_selected(&list_box, &scrolled_window);
+                    }
+                }
+                glib::Propagation::Stop
+            }
+            gtk::gdk::Key::Up => {
+                if let Some(selected_row) = list_box.selected_row() {
+                    let index = selected_row.index();
+                    if index > 0 {
+                        if let Some(prev_row) = list_box.row_at_index(index - 1) {
+                            list_box.select_row(Some(&prev_row));
+                            scroll_to_selected(&list_box, &scrolled_window);
+                        }
+                    }
+                }
+                glib::Propagation::Stop
+            }
+            _ => glib::Propagation::Proceed
+        }
+    }));
+    entry.add_controller(entry_nav_controller);
 
     window.present();
     window.set_focus_visible(true);
