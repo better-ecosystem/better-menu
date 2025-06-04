@@ -3,9 +3,10 @@ use adw::{Application, ApplicationWindow, HeaderBar};
 use gio::ApplicationFlags;
 use glib::ExitCode;
 use gtk::{
-    Align, Box as GtkBox, Entry, EventControllerKey, Image, Label, ListBox, Orientation,
+    Align, Box as GtkBox, Entry, EventControllerKey, EventControllerFocus, Image, Label, ListBox, Orientation,
     PolicyType, ScrolledWindow, SelectionMode,
 };
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
@@ -33,6 +34,13 @@ fn build_ui(app: &Application) {
         .default_height(400)
         .build();
 
+    window.set_resizable(false);
+    window.set_decorated(false);
+    window.set_modal(true);
+    window.set_deletable(false);
+    
+    window.set_default_size(600, 400);
+
     let header_bar = HeaderBar::new();
 
     let main_box = GtkBox::new(Orientation::Vertical, 0);
@@ -40,15 +48,18 @@ fn build_ui(app: &Application) {
 
     let entry = Entry::builder()
         .placeholder_text("Search applications...")
-        .margin_top(10)
-        .margin_bottom(10)
-        .margin_start(10)
-        .margin_end(10)
+        .margin_top(15)
+        .margin_bottom(15)
+        .margin_start(15)
+        .margin_end(15)
         .build();
 
     let scrolled_window = ScrolledWindow::builder()
         .hscrollbar_policy(PolicyType::Never)
         .vscrollbar_policy(PolicyType::Automatic)
+        .margin_start(10)
+        .margin_end(10)
+        .margin_bottom(10)
         .build();
 
     let list_box = ListBox::new();
@@ -86,6 +97,12 @@ fn build_ui(app: &Application) {
     }));
     window.add_controller(key_controller);
 
+    let focus_controller = EventControllerFocus::new();
+    focus_controller.connect_leave(glib::clone!(@weak window => move |_| {
+        window.close();
+    }));
+    window.add_controller(focus_controller);
+
     load_desktop_entries(&list_box, &exec_commands, &window);
 
     entry.connect_changed(move |entry| {
@@ -94,6 +111,9 @@ fn build_ui(app: &Application) {
     });
 
     window.present();
+    window.set_focus_visible(true);
+    
+    entry.grab_focus();
 }
 
 fn load_desktop_entries(list_box: &ListBox, exec_commands: &Rc<RefCell<HashMap<String, String>>>, window: &ApplicationWindow) {
