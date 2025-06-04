@@ -97,7 +97,7 @@ fn copy_to_clipboard(text: &str) {
 
 fn main() -> ExitCode {
     let app = Application::builder()
-        .application_id("com.better-ecosystem.menu")
+        .application_id("com.better-ecosystem.launcher")
         .flags(ApplicationFlags::default())
         .build();
 
@@ -110,7 +110,7 @@ fn build_ui(app: &Application) {
     let math_results: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let window = ApplicationWindow::builder()
         .application(app)
-        .title("Better Menu")
+        .title("Better Launcher")
         .default_width(600)
         .default_height(400)
         .build();
