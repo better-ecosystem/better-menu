@@ -3,7 +3,8 @@ use adw::{Application, ApplicationWindow, HeaderBar};
 use gio::ApplicationFlags;
 use glib::ExitCode;
 use gtk::{
-    Box as GtkBox, Entry, Orientation, ListBox, ScrolledWindow, PolicyType, SelectionMode, Label, Align, Image, EventControllerKey
+    Align, Box as GtkBox, Entry, EventControllerKey, Image, Label, ListBox, Orientation,
+    PolicyType, ScrolledWindow, SelectionMode,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -11,7 +12,7 @@ use xdg::BaseDirectories;
 
 fn main() -> ExitCode {
     let app = Application::builder()
-        .application_id("com.example.bettermenu")
+        .application_id("com.better-ecosystem.menu")
         .flags(ApplicationFlags::default())
         .build();
 
@@ -107,7 +108,7 @@ fn load_desktop_entries(list_box: &ListBox) {
             label.set_margin_top(5);
             label.set_margin_bottom(5);
             item_box.append(&label);
-            
+
             list_box.append(&item_box);
         }
     }
@@ -120,7 +121,7 @@ fn collect_desktop_files(dir: PathBuf, desktop_files: &mut Vec<PathBuf>) {
             if path.is_file() && path.extension().map_or(false, |ext| ext == "desktop") {
                 desktop_files.push(path);
             } else if path.is_dir() {
-                collect_desktop_files(path, desktop_files); 
+                collect_desktop_files(path, desktop_files);
             }
         }
     }
@@ -163,7 +164,7 @@ fn parse_desktop_file(file_path: &PathBuf) -> Option<(String, String)> {
     if app_type.as_deref() != Some("Application") {
         return None;
     }
-    
+
     name.zip(icon)
 }
 
@@ -171,8 +172,16 @@ fn filter_entries(list_box: &ListBox, query: &str) {
     let mut current_row_widget = list_box.first_child();
     while let Some(row_widget) = current_row_widget {
         if let Some(list_box_row) = row_widget.downcast_ref::<gtk::ListBoxRow>() {
-            if let Some(item_box) = list_box_row.child().as_ref().and_then(|child_widget_ref| child_widget_ref.downcast_ref::<GtkBox>()) {
-                if let Some(label) = item_box.last_child().as_ref().and_then(|child_widget_ref| child_widget_ref.downcast_ref::<Label>()) {
+            if let Some(item_box) = list_box_row
+                .child()
+                .as_ref()
+                .and_then(|child_widget_ref| child_widget_ref.downcast_ref::<GtkBox>())
+            {
+                if let Some(label) = item_box
+                    .last_child()
+                    .as_ref()
+                    .and_then(|child_widget_ref| child_widget_ref.downcast_ref::<Label>())
+                {
                     let app_name = label.text().to_lowercase();
                     list_box_row.set_visible(app_name.contains(query));
                 }
