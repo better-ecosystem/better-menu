@@ -39,7 +39,19 @@ fn scroll_to_selected(list_box: &ListBox, scrolled_window: &ScrolledWindow) {
 }
 
 fn evaluate_math_expression(expression: &str) -> Option<String> {
-    match eval(expression) {
+    let expr = if expression.contains('/') {
+        expression.replace('/', " / ").split_whitespace().map(|token| {
+            if token.parse::<i64>().is_ok() && !token.contains('.') {
+                format!("{}.0", token)
+            } else {
+                token.to_string()
+            }
+        }).collect::<Vec<String>>().join(" ").replace(" / ", "/")
+    } else {
+        expression.to_string()
+    };
+    
+    match eval(&expr) {
         Ok(result) => Some(result.to_string()),
         Err(_) => None,
     }
