@@ -6,8 +6,12 @@ use gtk::{
     Align, Box as GtkBox, Entry, EventControllerKey, Image, Label, ListBox, Orientation,
     PolicyType, ScrolledWindow, SelectionMode,
 };
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
+use std::rc::Rc;
 use xdg::BaseDirectories;
 
 fn main() -> ExitCode {
@@ -21,6 +25,7 @@ fn main() -> ExitCode {
 }
 
 fn build_ui(app: &Application) {
+    let exec_commands: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Better Menu")
@@ -58,9 +63,22 @@ fn build_ui(app: &Application) {
     window.set_content(Some(&main_box));
 
     let key_controller = EventControllerKey::new();
-    key_controller.connect_key_pressed(glib::clone!(@weak window => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
+    key_controller.connect_key_pressed(glib::clone!(@weak window, @weak list_box, @strong exec_commands => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
         if key == gtk::gdk::Key::Escape {
             window.close();
+            glib::Propagation::Stop
+        } else if key == gtk::gdk::Key::Return {
+            if let Some(selected_row) = list_box.selected_row() {
+                if let Some(item_box) = selected_row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
+                    if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
+                        let app_name = label.text().to_string();
+                        if let Some(exec_command) = exec_commands.borrow().get(&app_name) {
+                            launch_application(exec_command);
+                            window.close();
+                        }
+                    }
+                }
+            }
             glib::Propagation::Stop
         } else {
             glib::Propagation::Proceed
@@ -68,7 +86,7 @@ fn build_ui(app: &Application) {
     }));
     window.add_controller(key_controller);
 
-    load_desktop_entries(&list_box);
+    load_desktop_entries(&list_box, &exec_commands, &window);
 
     entry.connect_changed(move |entry| {
         let query = entry.text().to_lowercase();
@@ -78,7 +96,7 @@ fn build_ui(app: &Application) {
     window.present();
 }
 
-fn load_desktop_entries(list_box: &ListBox) {
+fn load_desktop_entries(list_box: &ListBox, exec_commands: &Rc<RefCell<HashMap<String, String>>>, window: &ApplicationWindow) {
     let xdg_dirs = BaseDirectories::new().unwrap();
     let mut desktop_files = Vec::new();
 
@@ -93,7 +111,7 @@ fn load_desktop_entries(list_box: &ListBox) {
     desktop_files.dedup();
 
     for file_path in desktop_files {
-        if let Some((app_name, icon_name)) = parse_desktop_file(&file_path) {
+        if let Some((app_name, icon_name, exec_command)) = parse_desktop_file(&file_path) {
             let item_box = GtkBox::new(Orientation::Horizontal, 5);
 
             let icon = Image::from_icon_name(&icon_name);
@@ -109,9 +127,23 @@ fn load_desktop_entries(list_box: &ListBox) {
             label.set_margin_bottom(5);
             item_box.append(&label);
 
+            exec_commands.borrow_mut().insert(app_name.clone(), exec_command);
+
             list_box.append(&item_box);
         }
     }
+
+    list_box.connect_row_activated(glib::clone!(@weak window, @strong exec_commands => move |_, row| {
+        if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
+            if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
+                let app_name = label.text().to_string();
+                if let Some(exec_command) = exec_commands.borrow().get(&app_name) {
+                    launch_application(exec_command);
+                    window.close();
+                }
+            }
+        }
+    }));
 }
 
 fn collect_desktop_files(dir: PathBuf, desktop_files: &mut Vec<PathBuf>) {
@@ -127,10 +159,11 @@ fn collect_desktop_files(dir: PathBuf, desktop_files: &mut Vec<PathBuf>) {
     }
 }
 
-fn parse_desktop_file(file_path: &PathBuf) -> Option<(String, String)> {
+fn parse_desktop_file(file_path: &PathBuf) -> Option<(String, String, String)> {
     let content = fs::read_to_string(file_path).ok()?;
     let mut name: Option<String> = None;
     let mut icon: Option<String> = None;
+    let mut exec: Option<String> = None;
     let mut no_display = false;
     let mut hidden = false;
     let mut app_type: Option<String> = None;
@@ -141,6 +174,9 @@ fn parse_desktop_file(file_path: &PathBuf) -> Option<(String, String)> {
         }
         if line.starts_with("Icon=") && icon.is_none() {
             icon = Some(line.trim_start_matches("Icon=").to_string());
+        }
+        if line.starts_with("Exec=") && exec.is_none() {
+            exec = Some(line.trim_start_matches("Exec=").to_string());
         }
         if line.starts_with("NoDisplay=") {
             if line.trim_start_matches("NoDisplay=").to_lowercase() == "true" {
@@ -165,7 +201,39 @@ fn parse_desktop_file(file_path: &PathBuf) -> Option<(String, String)> {
         return None;
     }
 
-    name.zip(icon)
+    match (name, icon, exec) {
+        (Some(n), Some(i), Some(e)) => Some((n, i, e)),
+        _ => None,
+    }
+}
+
+fn launch_application(exec_command: &str) {
+    let cleaned_command = clean_exec_command(exec_command);
+    
+    let parts: Vec<&str> = cleaned_command.split_whitespace().collect();
+    if let Some(program) = parts.first() {
+        let args = &parts[1..];
+        
+        match Command::new(program).args(args).spawn() {
+            Ok(_) => {
+            }
+            Err(e) => {
+                eprintln!("Failed to launch application: {}", e);
+            }
+        }
+    }
+}
+
+fn clean_exec_command(exec: &str) -> String {
+    exec.replace("%f", "")
+        .replace("%F", "")
+        .replace("%u", "")
+        .replace("%U", "")
+        .replace("%i", "")
+        .replace("%c", "")
+        .replace("%k", "")
+        .trim()
+        .to_string()
 }
 
 fn filter_entries(list_box: &ListBox, query: &str) {
