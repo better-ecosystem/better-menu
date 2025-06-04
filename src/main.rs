@@ -3,7 +3,7 @@ use adw::{Application, ApplicationWindow, HeaderBar};
 use gio::ApplicationFlags;
 use glib::ExitCode;
 use gtk::{
-    Align, Box as GtkBox, Entry, EventControllerKey, EventControllerFocus, Image, Label, ListBox, Orientation,
+    Align, Box as GtkBox, Entry, EventControllerKey, Image, Label, ListBox, Orientation,
     PolicyType, ScrolledWindow, SelectionMode,
 };
 
@@ -97,17 +97,25 @@ fn build_ui(app: &Application) {
     }));
     window.add_controller(key_controller);
 
-    let focus_controller = EventControllerFocus::new();
-    focus_controller.connect_leave(glib::clone!(@weak window => move |_| {
-        window.close();
-    }));
-    window.add_controller(focus_controller);
-
     load_desktop_entries(&list_box, &exec_commands, &window);
 
+    let list_box_clone = list_box.clone();
     entry.connect_changed(move |entry| {
         let query = entry.text().to_lowercase();
-        filter_entries(&list_box, &query);
+        if query.is_empty() {
+            list_box_clone.unset_filter_func();
+        } else {
+            let query_clone = query.clone();
+            list_box_clone.set_filter_func(move |row| {
+                if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
+                    if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
+                        let app_name = label.text().to_lowercase();
+                        return app_name.contains(&query_clone);
+                    }
+                }
+                false
+            });
+        }
     });
 
     window.present();
@@ -254,27 +262,4 @@ fn clean_exec_command(exec: &str) -> String {
         .replace("%k", "")
         .trim()
         .to_string()
-}
-
-fn filter_entries(list_box: &ListBox, query: &str) {
-    let mut current_row_widget = list_box.first_child();
-    while let Some(row_widget) = current_row_widget {
-        if let Some(list_box_row) = row_widget.downcast_ref::<gtk::ListBoxRow>() {
-            if let Some(item_box) = list_box_row
-                .child()
-                .as_ref()
-                .and_then(|child_widget_ref| child_widget_ref.downcast_ref::<GtkBox>())
-            {
-                if let Some(label) = item_box
-                    .last_child()
-                    .as_ref()
-                    .and_then(|child_widget_ref| child_widget_ref.downcast_ref::<Label>())
-                {
-                    let app_name = label.text().to_lowercase();
-                    list_box_row.set_visible(app_name.contains(query));
-                }
-            }
-        }
-        current_row_widget = row_widget.next_sibling();
-    }
 }
