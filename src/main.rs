@@ -1,5 +1,5 @@
 use adw::prelude::*;
-use adw::{Application, ApplicationWindow, HeaderBar};
+use adw::{Application, ApplicationWindow};
 use gio::ApplicationFlags;
 use glib::ExitCode;
 use gtk::{
@@ -63,10 +63,7 @@ fn build_ui(app: &Application) {
     
     window.set_default_size(600, 400);
 
-    let header_bar = HeaderBar::new();
-
     let main_box = GtkBox::new(Orientation::Vertical, 0);
-    main_box.prepend(&header_bar);
 
     let entry = Entry::builder()
         .placeholder_text("Search applications...")
