@@ -127,6 +127,8 @@ fn build_ui(app: &Application) {
         if key == gtk::gdk::Key::Escape {
             window.close();
             glib::Propagation::Stop
+        } else if key == gtk::gdk::Key::Tab {
+            glib::Propagation::Stop
         } else if key == gtk::gdk::Key::Down {
             if let Some(selected_row) = list_box.selected_row() {
                 let index = selected_row.index();
