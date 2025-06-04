@@ -3,7 +3,7 @@ use adw::{Application, ApplicationWindow, HeaderBar};
 use gio::ApplicationFlags;
 use glib::ExitCode;
 use gtk::{
-    Box as GtkBox, Entry, Orientation, ListBox, ScrolledWindow, PolicyType, SelectionMode, Label, Align, Image
+    Box as GtkBox, Entry, Orientation, ListBox, ScrolledWindow, PolicyType, SelectionMode, Label, Align, Image, EventControllerKey
 };
 use std::fs;
 use std::path::PathBuf;
@@ -55,6 +55,17 @@ fn build_ui(app: &Application) {
     scrolled_window.set_vexpand(true);
 
     window.set_content(Some(&main_box));
+
+    let key_controller = EventControllerKey::new();
+    key_controller.connect_key_pressed(glib::clone!(@weak window => @default-return glib::Propagation::Proceed, move |_, key, _code, _state| {
+        if key == gtk::gdk::Key::Escape {
+            window.close();
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    }));
+    window.add_controller(key_controller);
 
     load_desktop_entries(&list_box);
 
