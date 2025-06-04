@@ -173,6 +173,7 @@ fn build_ui(app: &Application) {
             }
         } else {
             let query_clone = query.clone();
+            let query_for_idle = query.clone();
             list_box_clone.set_filter_func(move |row| {
                 if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                     if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
@@ -184,9 +185,23 @@ fn build_ui(app: &Application) {
             });
             
             glib::idle_add_local_once(glib::clone!(@weak list_box_clone, @weak scrolled_window_clone => move || {
-                if let Some(first_visible_row) = list_box_clone.row_at_index(0) {
-                    list_box_clone.select_row(Some(&first_visible_row));
-                    scroll_to_selected(&list_box_clone, &scrolled_window_clone);
+                let mut index = 0;
+                loop {
+                    if let Some(row) = list_box_clone.row_at_index(index) {
+                        if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
+                            if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
+                                let app_name = label.text().to_lowercase();
+                                if app_name.contains(&query_for_idle) {
+                                    list_box_clone.select_row(Some(&row));
+                                    scroll_to_selected(&list_box_clone, &scrolled_window_clone);
+                                    break;
+                                }
+                            }
+                        }
+                        index += 1;
+                    } else {
+                        break;
+                    }
                 }
             }));
         }
