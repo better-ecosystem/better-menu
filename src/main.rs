@@ -1,3 +1,6 @@
+pub mod config;
+pub mod logger;
+
 use adw::prelude::*;
 use adw::{Application, ApplicationWindow};
 use evalexpr::eval;
@@ -15,6 +18,14 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::rc::Rc;
 use xdg::BaseDirectories;
+
+use crate::config::{load_css, setup_layer_shell};
+use lazy_static::lazy_static;
+use crate::logger::{Logger, LogLevel};
+
+lazy_static! {
+    static ref LOG: Logger = Logger::new(LogLevel::Debug);
+}
 
 fn scroll_to_selected(list_box: &ListBox, scrolled_window: &ScrolledWindow) {
     if let Some(selected_row) = list_box.selected_row() {
@@ -115,12 +126,17 @@ fn build_ui(app: &Application) {
         .default_height(400)
         .build();
 
+    setup_layer_shell(&window);
+    load_css();
+
     window.set_resizable(false);
     window.set_decorated(false);
     window.set_modal(true);
     window.set_deletable(false);
+    window.set_widget_name("launcher");
     
     window.set_default_size(600, 400);
+
 
     let main_box = GtkBox::new(Orientation::Vertical, 0);
 
@@ -454,7 +470,7 @@ fn launch_application(exec_command: &str) {
             Ok(_) => {
             }
             Err(e) => {
-                eprintln!("Failed to launch application: {}", e);
+                LOG.error(&format!("Failed to launch application: {}", e));
             }
         }
     }
