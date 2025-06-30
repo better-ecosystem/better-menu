@@ -105,8 +105,8 @@ fn copy_to_clipboard(text: &str) {
         clipboard.set_text(text);
     }
 }
-
-fn main() -> ExitCode {
+#[tokio::main]
+async fn main() -> ExitCode {
     let app = Application::builder()
         .application_id("com.better-ecosystem.launcher")
         .flags(ApplicationFlags::default())
@@ -134,7 +134,7 @@ fn build_ui(app: &Application) {
     window.set_modal(true);
     window.set_deletable(false);
     window.set_widget_name("launcher");
-    
+
     window.set_default_size(600, 400);
 
 
@@ -172,7 +172,7 @@ fn build_ui(app: &Application) {
             if let Some(item_box) = selected_row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                 if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
                     let label_text = label.text().to_string();
-                    
+
                     if label_text.contains(" = ") {
                         let result = label_text.split(" = ").last().unwrap_or("").to_string();
                         copy_to_clipboard(&result);
@@ -195,7 +195,7 @@ fn build_ui(app: &Application) {
                 if let Some(item_box) = first_row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                     if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
                         let label_text = label.text().to_string();
-                        
+
                         if label_text.contains(" = ") {
                             let result = label_text.split(" = ").last().unwrap_or("").to_string();
                             copy_to_clipboard(&result);
@@ -219,7 +219,7 @@ fn build_ui(app: &Application) {
     let math_results_clone = math_results.clone();
     entry.connect_changed(move |entry| {
         let query = entry.text().to_lowercase();
-        
+
         while let Some(row) = list_box_clone.row_at_index(0) {
             if let Some(item_box) = row.child().as_ref().and_then(|child| child.downcast_ref::<GtkBox>()) {
                 if let Some(label) = item_box.last_child().as_ref().and_then(|child| child.downcast_ref::<Label>()) {
@@ -232,7 +232,7 @@ fn build_ui(app: &Application) {
             }
             break;
         }
-        
+
         if query.is_empty() {
             list_box_clone.unset_filter_func();
             if let Some(first_row) = list_box_clone.row_at_index(0) {
@@ -246,7 +246,7 @@ fn build_ui(app: &Application) {
                 math_results_clone.borrow_mut().clear();
                 math_results_clone.borrow_mut().push(result);
             }
-            
+
             let query_clone = query.clone();
             let query_for_idle = query.clone();
             list_box_clone.set_filter_func(move |row| {
@@ -262,7 +262,7 @@ fn build_ui(app: &Application) {
                 }
                 false
             });
-            
+
             glib::idle_add_local_once(glib::clone!(@weak list_box_clone, @weak scrolled_window_clone => move || {
                 let mut index = 0;
                 loop {
@@ -334,16 +334,16 @@ fn build_ui(app: &Application) {
 
     window.present();
     window.set_focus_visible(true);
-    
+
     entry.grab_focus();
 }
 
 fn load_desktop_entries(list_box: &ListBox, exec_commands: &Rc<RefCell<HashMap<String, String>>>, window: &ApplicationWindow) {
-    let xdg_dirs = BaseDirectories::new().unwrap();
+    let xdg_dirs = BaseDirectories::new();
     let mut desktop_files = Vec::new();
 
     let data_home_path = xdg_dirs.get_data_home();
-    collect_desktop_files(data_home_path.join("applications"), &mut desktop_files);
+    collect_desktop_files(data_home_path.unwrap().join("applications"), &mut desktop_files);
 
     for data_dir in xdg_dirs.get_data_dirs() {
         collect_desktop_files(data_dir.join("applications"), &mut desktop_files);
@@ -460,21 +460,23 @@ fn parse_desktop_file(file_path: &PathBuf) -> Option<(String, String, String)> {
 }
 
 fn launch_application(exec_command: &str) {
-    let cleaned_command = clean_exec_command(exec_command);
-    
-    let parts: Vec<&str> = cleaned_command.split_whitespace().collect();
-    if let Some(program) = parts.first() {
-        let args = &parts[1..];
-        
-        match Command::new(program).args(args).spawn() {
-            Ok(_) => {
+    let cleaned_command = clean_exec_command(exec_command).to_string();
+
+    tokio::spawn(async move {
+        tokio::task::spawn_blocking(move || {
+            let parts: Vec<&str> = cleaned_command.split_whitespace().collect();
+            if let Some(program) = parts.first() {
+                let args = &parts[1..];
+                if let Err(e) = Command::new(program).args(args).spawn() {
+                    LOG.error(&format!("Failed to launch application: {}", e));
+                }
             }
-            Err(e) => {
-                LOG.error(&format!("Failed to launch application: {}", e));
-            }
-        }
-    }
+        }).await.unwrap_or_else(|e| {
+            LOG.error(&format!("Failed to spawn blocking task: {}", e));
+        });
+    });
 }
+
 
 fn clean_exec_command(exec: &str) -> String {
     exec.replace("%f", "")
